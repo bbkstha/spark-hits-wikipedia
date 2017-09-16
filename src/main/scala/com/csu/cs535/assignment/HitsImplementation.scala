@@ -7,15 +7,32 @@ object HitsImplementation {
 
   def main(args: Array[String]): Unit ={
 
-    val logFile = "/s/chopin/b/grad/bbkstha/Downloads/spark/spark-2.2.0-bin-hadoop2.7/README.md" // Should be some file on your system
-    val spark = SparkSession.builder.appName("HITSMain").master("local").getOrCreate()
-    val logData = spark.read.textFile(logFile).cache()
-    val numAs = logData.filter(line => line.contains("a")).count()
-    val numBs = logData.filter(line => line.contains("b")).count()
-    println(s"Lines with a: $numAs, Lines with b: $numBs")
+
+    val spark = SparkSession.builder.appName("HITSImplementation").master("local").getOrCreate()
+    val sortedTitle = spark.read.textFile("/s/chopin/b/grad/bbkstha/CS535/ProgrammingAssignment/Wikipedia Data/titles-sorted.txt")
+                            .rdd.zipWithIndex()
+                              .map{case (l,i) =>(i+1).toString+" "+l}
+    println(sortedTitle.first())
+
+    /*Get the query from the user.
+    * Issues: Multiple strings
+    *         Non alphabetical character
+    *         Numeric values*/
+    val queryString = "Nepal"
+
+    val rootSet = sortedTitle.filter(l => l.contains(queryString))
+    println(rootSet)
+   // println(rootSet.toString())
+   // println(rootSet.toString().split(" "))
+
+
+
+
     spark.stop()
+
 
 
   }
 
 }
+
