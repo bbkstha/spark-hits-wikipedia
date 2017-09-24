@@ -1,51 +1,98 @@
 package com.csu.cs535.assignment
 
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 
 object HitsImplementation {
 
-  case class Title (index: Int, title: String)
-
 
   def main(args: Array[String]): Unit ={
 
-
     val spark = SparkSession.builder.appName("HITSImplementation").master("local").getOrCreate()
     import spark.implicits._
+    val sortedTitle = spark.read.textFile("/home/bbkstha/CSU/I/Big Data/PA/HITS/wikipedia data/sample/title.txt")
+                            .rdd.zipWithIndex().map{case (l,i) =>((i+1), l)}
+    val linkSorted = spark.read
+      .textFile("/home/bbkstha/CSU/I/Big Data/PA/HITS/wikipedia data/sample/links.txt")
+      .rdd.map(x => (x.split(":")(0).toLong, x.split(":")(1))).distinct()
 
-
-    val sortedTitle = spark.read.textFile("/s/chopin/b/grad/bbkstha/CS535/ProgrammingAssignment/Wikipedia Data/titles-sorted.txt")
-                            .rdd.zipWithIndex().map{case (l,i) =>((i+1), l)}//.toDS() //.map(x,y => (x.split(" ")(0), x)).toDS()
-
-    val linkSorted = spark.read.textFile("/s/chopin/b/grad/bbkstha/CS535/ProgrammingAssignment/Wikipedia Data/links-simple-sorted.txt").rdd
-                      //.rdd.zipWithIndex().map{case (l,i) =>((i+1), l)}//.toDS() //.map(x,y => (x.split(" ")(0), x)).toDS()
+    val splitLink = linkSorted.flatMapValues(y=> y.trim.split(" +"))
+    val linkForEach = splitLink.mapValues(y => y.toLong)
 
     /*Get the query from the user.
     * Issues: Multiple strings
     *         Non alphabetical character
     *         Numeric values*/
 
-    val queryString = "Nepal"
-    val res = sortedTitle.filter(f=> f._2.contains(queryString)).keys
+    val queryString = "Nepal" //args[0]
 
-    println(res)
+    val rootSetRDD = sortedTitle.filter(f=> f._2.contains(queryString))
+    //Get appropriate sample
+    val sampleFraction = if (rootSetRDD.count()>5) (5.0/rootSetRDD.count()) else 1.0
+    val sampledRootSetRDD = rootSetRDD.sample(false, sampleFraction, 200000)
 
-    //val res = spark("SELECT * FROM sortedTitle")
+    //sampledRootSetRDD.toDF().show()
+    //linkForEach.toDF().show()
+    val outLinkSet = sampledRootSetRDD.join(linkForEach).map(x=>(x._1, x._2._2))
 
-    //val rootSet = sortedTitle.select("_1").show(10)//filter(_1 = queryString)
+    //outLinkSet.toDF().show()
 
-    //val rootSet = spark.sql("Select index from 'sortedTitle' where title = queryString")
-    //println(rootSet)
-   // println(rootSet.toString())
-   // println(rootSet.toString().split(" "))
+    val linkForInLink = linkForEach.map(x=>(x._2,x._1))
+    val inLinkSet = sampledRootSetRDD.join(linkForInLink).map(x => (x._2._2, x._1))
 
+    //inLinkSet.toDF().show()
 
+    val allOutLinks = outLinkSet.union(inLinkSet)
 
+    //allOutLinks.toDF().show()
+
+    val allInLinks = allOutLinks.map(x=>(x._2, x._1))
+    //allInLinks.toDF().show()
+
+    var hubScore = allOutLinks.map(x=>(x._1, 1.0)).distinct()
+    var authScore = allInLinks.map(x=> (x._1, 1.0)).distinct()
+
+    //hubScore.toDF().show()
+    //Update auth and hub scores
+    for(i<-0 to 2){
+      authScore = allOutLinks
+        .join(hubScore)
+        .map(x=>(x._2._1,x._2._2))
+        .reduceByKey((x,y)=>x+y)
+
+      authScore = normalizer(authScore, spark)
+      authScore.toDF().show()
+
+      hubScore = allInLinks
+        .join(authScore)
+        .map(x=>(x._2._1,x._2._2))
+        .reduceByKey((x,y)=>x+y)
+      hubScore = normalizer(hubScore, spark)
+      hubScore.toDF().show()
+    }
+
+    //hubScore.toDF().show()
+
+    //Output
+    authScore.toDF().show()
+//    val topAuthTitleIndex = spark.sparkContext.parallelize(authScore.takeOrdered(10))
+//    val topAuthTitle = topAuthTitleIndex.join(sortedTitle).toDF()
+//    topAuthTitle.show()
+
+//    val topHubTitleIndex = spark.sparkContext.parallelize(hubScore.takeOrdered(10))
+//    val topHubTitle = topHubTitleIndex.join(sortedTitle).toDF()
+//    topHubTitle.show()
 
     spark.stop()
+  }
 
+  def normalizer(inputRDD: RDD[(Long, Double)], sparkSession: SparkSession): RDD[(Long, Double)] = {
 
-
+    val accum = sparkSession.sparkContext.doubleAccumulator("My Accumulator")
+    inputRDD.foreach(f=> accum.add(f._2))
+    val sum = accum.value
+    val temp = inputRDD.map(x =>(x._1, x._2/sum))
+    return temp
   }
 
 }
