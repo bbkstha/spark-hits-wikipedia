@@ -33,12 +33,29 @@ object HitsImplementation {
     //Get appropriate sample; expect 5 sample count
     val sampleFraction = if (rootSetRDD.count()>rootSetCount) (rootSetCount.toDouble/rootSetRDD.count()) else 1.0
     val sampledRootSetRDD = rootSetRDD.sample(false, sampleFraction, 200000)
-    sampledRootSetRDD.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sep26Root.txt")
-    val outLinkSet = sampledRootSetRDD.join(linkForEach).mapValues(x=>x._2)//.map(x=>(x._1, x._2._2))
-    val linkForInLink = linkForEach.map(_.swap)//.map(x=>(x._2,x._1))	    
-    val inLinkSet = sampledRootSetRDD.join(linkForInLink).map(x => (x._2._2, x._1))
-    
-        //test
+    //sampledRootSetRDD.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sep26Root.txt")
+
+    //test
+    val sampleBase = linkForEach.groupByKey()
+    val samp = sampleBase.map{case(x, y) => (x, if (y.size>10) y.slice(0, 10) else y)}
+    val sam = samp.flatMapValues(x=>x)
+    // replacing linkForEach to sam
+    val outLinkSet = sampledRootSetRDD.join(sam).mapValues(x=>x._2)//.map(x=>(x._1, x._2._2))
+    //val outLinkSet = sampledRootSetRDD.join(linkForEach).mapValues(x=>x._2)//.map(x=>(x._1, x._2._2))
+
+    val linkForInLink = linkForEach.map(_.swap)//.map(x=>(x._2,x._1))
+    //test: commented out
+    //val inLinkSet = sampledRootSetRDD.join(linkForInLink).map(x => (x._2._2, x._1))//.map(x=> (x._1.toLong, x._2))
+
+    //test
+    val sampleBase1 = sampledRootSetRDD.join(linkForInLink).mapValues(x=>x._2).groupByKey()
+    val samp1 = sampleBase1.map{case(x, y) => (x, if (y.size>5) y.slice(0, 5) else y)}
+    val sam1 = samp1.flatMapValues(x=>x)
+    val sa1 = sam1.map(_.swap)
+
+
+
+    //test
 	    //val inLinkSetNotSwap = sampledRootSetRDD.join(linkForInLink)
       //val inLinkForOuter = outLinkSet.join(inLinkSet.map(_.swap)).map(x=>x._2._2, x._1)
 	    //val linkFromInLinkToRootToOutlink = linkForEach.join(inLinkForOuter).map{case(x,(y,z)) => if((y-z)==0) (x,y) else None }
@@ -47,10 +64,11 @@ object HitsImplementation {
     
     
 
-
-    val allOutLinks = outLinkSet.union(inLinkSet)
+    //test; commented out
     //val allOutLinks = outLinkSet.union(inLinkSet)
-    allOutLinks.coalesce(1).saveAsTextFile(("hdfs://boise:31701/Sep26BaseOutLink.txt"))
+    val allOutLinks = outLinkSet.union(sa1)
+
+    //allOutLinks.coalesce(1).saveAsTextFile(("hdfs://boise:31701/Sep26BaseOutLink.txt"))
     if(check=="T"){
       val allInLinks = allOutLinks.map(_.swap)//.map(x=>(x._2, x._1))
       var hubScore = allOutLinks.map(x=>(x._1, 1.0)).distinct()
@@ -72,8 +90,9 @@ object HitsImplementation {
       val topHubWithTitle = topHub.join(sortedTitle).map(x=>(x._1, x._2._1, x._2._2)).sortBy(_._2, false)
       val topAuth = spark.sparkContext.parallelize(authScore.sortBy(_._2, false).takeOrdered(10))
       val topAuthWithTitle = topAuth.join(sortedTitle).map(x=>(x._1, x._2._1, x._2._2)).sortBy(_._2, false)
-      topHubWithTitle.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sept26TopHub.txt")
-      topAuthWithTitle.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sept26TopAuth.txt")
+      //topHubWithTitle.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sept26TopHub.txt")
+      //topAuthWithTitle.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sept26TopAuth.txt")
+      topAuthWithTitle.toDS().show()
     }
 
     val execTime = (System.currentTimeMillis() - execStart)/60000.0
