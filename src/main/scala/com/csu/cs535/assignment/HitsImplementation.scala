@@ -19,25 +19,25 @@ object HitsImplementation {
       .getOrCreate()
     import spark.implicits._
     val sortedTitle = spark.read.textFile("hdfs://boise:31701/titles.txt")
-      .rdd.zipWithIndex().map{case (l,i) =>((i+1), l)}
+      .rdd.zipWithIndex().map{case (l,i) =>((i+1).toInt, l)}
       .partitionBy(new HashPartitioner(100))
       .persist()
     val linkSorted = spark.read
       .textFile("hdfs://boise:31701/links.txt")
-      .rdd.map(x => (x.split(":")(0).toLong, x.split(":")(1)))
+      .rdd.map(x => (x.split(":")(0).toInt, x.split(":")(1)))
       .partitionBy(new HashPartitioner(100))
       .persist()
-    val linkForEach = linkSorted.flatMapValues(y=> y.trim.split(" +")).mapValues(x=>x.toLong)
+    val linkForEach = linkSorted.flatMapValues(y=> y.trim.split(" +")).mapValues(x=>x.toInt)
     //Search query
     val rootSetRDD = sortedTitle.filter(f=> f._2.toLowerCase.contains(queryString.toLowerCase))
     //Get appropriate sample; expect 5 sample count
-    val sampleFraction = if (rootSetRDD.count()>rootSetCount) (rootSetCount.toDouble/rootSetRDD.count()) else 1.0
+    val sampleFraction = if (rootSetRDD.count()>rootSetCount) (rootSetCount.toFloat/rootSetRDD.count()) else 1.0
     val sampledRootSetRDD = rootSetRDD.sample(false, sampleFraction, 200000)
     //sampledRootSetRDD.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sep26Root.txt")
 
     //test
     val sampleBase = linkForEach.groupByKey()
-    val samp = sampleBase.map{case(x, y) => (x, if (y.size>10) y.slice(0, 10) else y)}
+    val samp = sampleBase.map{case(x, y) => (x, if (y.size>5) y.slice(0, 5) else y)}
     val sam = samp.flatMapValues(x=>x)
     // replacing linkForEach to sam
     val outLinkSet = sampledRootSetRDD.join(sam).mapValues(x=>x._2)//.map(x=>(x._1, x._2._2))
@@ -66,13 +66,13 @@ object HitsImplementation {
 
     //test; commented out
     //val allOutLinks = outLinkSet.union(inLinkSet)
-    val allOutLinks = outLinkSet.union(sa1)
+    val allOutLinks = outLinkSet.union(sa1).persist()
 
     //allOutLinks.coalesce(1).saveAsTextFile(("hdfs://boise:31701/Sep26BaseOutLink.txt"))
     if(check=="T"){
-      val allInLinks = allOutLinks.map(_.swap)//.map(x=>(x._2, x._1))
-      var hubScore = allOutLinks.map(x=>(x._1, 1.0)).distinct()
-      var authScore = allInLinks.map(x=> (x._1, 1.0)).distinct()
+      val allInLinks = allOutLinks.map(_.swap).persist()//.map(x=>(x._2, x._1))
+      var hubScore = allOutLinks.map(x=>(x._1, 1.0)).distinct().persist()
+      var authScore = allInLinks.map(x=> (x._1, 1.0)).distinct().persist()
       //var tempHub = hubScore
       //var tempAuth = authScore
       //Iterate 50 times to update hub and authority scores
@@ -87,12 +87,12 @@ object HitsImplementation {
       }
       //Output
       val topHub = spark.sparkContext.parallelize(hubScore.sortBy(_._2, false).takeOrdered(10))
-      val topHubWithTitle = topHub.join(sortedTitle).map(x=>(x._1, x._2._1, x._2._2)).sortBy(_._2, false)
+      val topHubWithTitle = topHub.join(sortedTitle)//.map(x=>(x._1, x._2._1, x._2._2)).sortBy(_._2, false)
       val topAuth = spark.sparkContext.parallelize(authScore.sortBy(_._2, false).takeOrdered(10))
-      val topAuthWithTitle = topAuth.join(sortedTitle).map(x=>(x._1, x._2._1, x._2._2)).sortBy(_._2, false)
+      val topAuthWithTitle = topAuth.join(sortedTitle)//.map(x=>(x._1, x._2._1, x._2._2)).sortBy(_._2, false)
       //topHubWithTitle.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sept26TopHub.txt")
       //topAuthWithTitle.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sept26TopAuth.txt")
-      topAuthWithTitle.toDS().show()
+      topAuthWithTitle.toDF().show()
     }
 
     val execTime = (System.currentTimeMillis() - execStart)/60000.0
@@ -101,7 +101,7 @@ object HitsImplementation {
     spark.stop()
   }
 
-  def normalizer(inputRDD: RDD[(Long, Double)], sparkSession: SparkSession): RDD[(Long, Double)] = {
+  def normalizer(inputRDD: RDD[(Int, Double)], sparkSession: SparkSession): RDD[(Int, Double)] = {
     val accum = sparkSession.sparkContext.doubleAccumulator("My Accumulator")
     inputRDD.foreach(f=> accum.add(f._2))
     val sum = accum.value
