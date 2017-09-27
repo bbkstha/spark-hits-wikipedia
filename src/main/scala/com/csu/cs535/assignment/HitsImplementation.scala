@@ -86,13 +86,14 @@ object HitsImplementation {
         //if (accum.value<1) break;
       }
       //Output
-      val topHub = spark.sparkContext.parallelize(hubScore.sortBy(_._2, false).takeOrdered(10))
+      val topHub = spark.sparkContext.parallelize(hubScore.sortBy(_._2).takeOrdered(50))
       val topHubWithTitle = topHub.join(sortedTitle)//.map(x=>(x._1, x._2._1, x._2._2)).sortBy(_._2, false)
-      val topAuth = spark.sparkContext.parallelize(authScore.sortBy(_._2, false).takeOrdered(10))
+      val topAuth = spark.sparkContext.parallelize(authScore.sortBy(_._2, false).takeOrdered(50))
       val topAuthWithTitle = topAuth.join(sortedTitle)//.map(x=>(x._1, x._2._1, x._2._2)).sortBy(_._2, false)
       //topHubWithTitle.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sept26TopHub.txt")
       //topAuthWithTitle.coalesce(1).saveAsTextFile("hdfs://boise:31701/Sept26TopAuth.txt")
-      topAuthWithTitle.toDF().show()
+      //topAuthWithTitle.sortBy(_._2._1, false).takeOrdered(10).foreach(println)
+      topHubWithTitle.sortBy(_._2._1, false).takeOrdered(10).foreach(println)
     }
 
     val execTime = (System.currentTimeMillis() - execStart)/60000.0
