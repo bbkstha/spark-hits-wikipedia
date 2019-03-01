@@ -15,7 +15,7 @@ For improving performance, following steps have been applied.
 1. Number of outgoing links per page p in RootSet is limited to less than or equal to 20.
 2. Number of incoming links per page p in RootSet is limited to less than or equal to 20.
 3. The maximum number of iteration is set to less than or equal to 40. In combination with this, the
-threashold of 0.000005 is set
+threshold of 0.000005 is set
 for sum of change in consecutive auth scores for base set.
   if(i>25){
     if(i>=40 | threshold(tempA, authScore, spark)<0.000005) {
